@@ -368,8 +368,8 @@ html[data-theme="warm"] .hue-4{--hue-soft:#F0E8D2;--hue-a:#D8CFA0;--hue-b:#93894
 .book-card:last-child{margin-bottom:0}
 .book-card-inner{cursor:pointer;display:flex;align-items:flex-start;gap:12px}
 .book-info{flex:1 1 auto;min-width:0}
-.book-card .book-title{font-size:1.1rem;margin:0 22px 2px 0}
-.book-author{font-size:.85rem;font-style:italic;color:var(--muted);margin:0 22px 8px 0}
+.book-card .book-title{font-size:1.1rem;margin:0 46px 2px 0}
+.book-author{font-size:.85rem;font-style:italic;color:var(--muted);margin:0 46px 8px 0}
 .book-remove{
   position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;
   background:#fff;color:var(--muted);border:1px solid var(--line);
@@ -377,6 +377,13 @@ html[data-theme="warm"] .hue-4{--hue-soft:#F0E8D2;--hue-a:#D8CFA0;--hue-b:#93894
   font-size:1rem;line-height:1;cursor:pointer;padding:0;z-index:2;
 }
 .book-remove:hover{background:var(--pink-dark);color:#fff}
+.book-edit{
+  position:absolute;top:8px;right:38px;width:24px;height:24px;border-radius:50%;
+  background:rgba(255,255,255,.6);color:var(--muted);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:.85rem;line-height:1;cursor:pointer;padding:0;z-index:2;
+}
+.book-edit:hover{background:var(--green-dark,#7FA66A);color:#fff}
 
 /* book cover thumbnail — scales with the card, portrait shaped, no filler when absent */
 .book-cover-thumb{
@@ -1101,6 +1108,43 @@ html[data-babyblue="1"] .tab-btn-highlight.active .ic{color:var(--text)}
   </div>
 </div>
 
+<!-- ============ EDIT BOOK MODAL ============ -->
+<div class="modal-backdrop" id="editBookModal">
+  <div class="modal">
+    <h3>✎ Edit Book</h3>
+    <div class="sub">Update any of the details below</div>
+    <label for="ebSearch">Search Open Library</label>
+    <div class="crop-url-row">
+      <input id="ebSearch" placeholder="Search by title or author..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchOpenLibraryEdit();}">
+      <button class="ghost small" type="button" onclick="searchOpenLibraryEdit()">Search</button>
+    </div>
+    <div id="ebResults" class="ol-results" style="display:none"></div>
+    <div id="ebStatus" class="ol-status" style="display:none"></div>
+    <label for="ebTitle">Book Title</label>
+    <input id="ebTitle" placeholder="e.g. Atomic Habits">
+    <label for="ebAuthor">Author (optional)</label>
+    <input id="ebAuthor" placeholder="e.g. James Clear">
+    <label for="ebTotal">Total Pages</label>
+    <input id="ebTotal" type="number" inputmode="numeric" placeholder="320">
+    <label for="ebPage">Current Page</label>
+    <input id="ebPage" type="number" inputmode="numeric" placeholder="1">
+    <label for="ebCoverUrl">Cover Photo URL (optional)</label>
+    <input id="ebCoverUrl" type="url" placeholder="https://..." oninput="onEbCoverUrlInput()">
+    <div class="cover-draft-row" id="ebCoverDraftRow" style="display:none">
+      <div class="book-cover-thumb" id="ebCoverDraftThumb" onclick="openCoverAdjustModalForEdit()">
+        <img id="ebCoverDraftImg" alt="" onerror="handleCoverImgError('ebDraft')" onload="handleCoverImgLoad('ebDraft')">
+      </div>
+      <button class="ghost small" type="button" onclick="openCoverAdjustModalForEdit()">Adjust Photo</button>
+      <button class="ghost small" type="button" onclick="clearEbCoverDraft()">Remove</button>
+    </div>
+    <div class="cover-error" id="ebCoverDraftError" style="display:none">Couldn't load that image — check that the link points straight to an image file (ends in .jpg, .png, etc.), not a webpage.</div>
+    <div class="row-buttons" style="margin-top:14px">
+      <button class="ghost small" onclick="closeModal('editBookModal')">Cancel</button>
+      <button class="primary" style="flex:1" onclick="submitEditBook()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ COVER ADJUST MODAL ============ -->
 <div class="modal-backdrop" id="coverCropModal">
   <div class="modal">
@@ -1819,11 +1863,11 @@ function onCoverUrlInput(){
 }
 
 function handleCoverImgError(which){
-  const errEl = document.getElementById(which === "draft" ? "coverDraftError" : "cropImgError");
+  const errEl = document.getElementById(which === "draft" ? "coverDraftError" : which === "ebDraft" ? "ebCoverDraftError" : "cropImgError");
   if(errEl) errEl.style.display = "block";
 }
 function handleCoverImgLoad(which){
-  const errEl = document.getElementById(which === "draft" ? "coverDraftError" : "cropImgError");
+  const errEl = document.getElementById(which === "draft" ? "coverDraftError" : which === "ebDraft" ? "ebCoverDraftError" : "cropImgError");
   if(errEl) errEl.style.display = "none";
 }
 
@@ -1879,12 +1923,126 @@ async function submitNewBook(){
   }
 }
 
+/* ---- context 5: Edit Book modal (existing currently-reading book) ---- */
+let ebCoverDraft = null;
+let ebEditingId = null;
+
+function resetEbOlSearch(){
+  document.getElementById("ebResults").style.display = "none";
+  document.getElementById("ebResults").innerHTML = "";
+  document.getElementById("ebStatus").style.display = "none";
+  document.getElementById("ebSearch").value = "";
+}
+
+function openEditBookModal(bookId){
+  const book = s.books.find(b => b.id === bookId);
+  if(!book) return;
+  ebEditingId = bookId;
+  document.getElementById("ebTitle").value = book.title || "";
+  document.getElementById("ebAuthor").value = book.author || "";
+  document.getElementById("ebTotal").value = book.total || "";
+  document.getElementById("ebPage").value = book.lastPage || "";
+  ebCoverDraft = book.cover ? { ...book.cover } : null;
+  document.getElementById("ebCoverUrl").value = ebCoverDraft ? ebCoverDraft.url : "";
+  document.getElementById("ebCoverDraftError").style.display = "none";
+  resetEbOlSearch();
+  updateEbCoverDraftUi();
+  openModal("editBookModal");
+}
+
+async function onPickEditBookCover(d){
+  document.getElementById("ebTitle").value = d.title || "";
+  document.getElementById("ebAuthor").value = (d.author_name && d.author_name[0]) || "";
+  if(d.cover_i){
+    toast("Filled in — compressing cover…");
+    const compressed = await compressImageUrl(`https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`);
+    document.getElementById("ebCoverUrl").value = compressed;
+    ebCoverDraft = { url: compressed, zoom: 1, posX: 50, posY: 50 };
+    updateEbCoverDraftUi();
+    toast("Cover added — use Adjust Photo if you'd like to reposition it");
+  } else {
+    toast("Filled in from Open Library");
+  }
+}
+const runEditBookSearch = initOlSearch({ inputId: "ebSearch", resultsId: "ebResults", statusId: "ebStatus", onPick: onPickEditBookCover });
+function searchOpenLibraryEdit(){ runEditBookSearch(); }
+
+let ebCoverUrlDebounce = null;
+function onEbCoverUrlInput(){
+  clearTimeout(ebCoverUrlDebounce);
+  ebCoverUrlDebounce = setTimeout(() => {
+    const url = document.getElementById("ebCoverUrl").value.trim();
+    if(!url){ ebCoverDraft = null; updateEbCoverDraftUi(); return; }
+    if(!ebCoverDraft || ebCoverDraft.url !== url){
+      ebCoverDraft = isSafeImageUrl(url) ? { url, zoom: 1, posX: 50, posY: 50 } : null;
+    }
+    updateEbCoverDraftUi();
+  }, 400);
+}
+
+function clearEbCoverDraft(){
+  ebCoverDraft = null;
+  document.getElementById("ebCoverUrl").value = "";
+  document.getElementById("ebCoverDraftError").style.display = "none";
+  updateEbCoverDraftUi();
+}
+
+function updateEbCoverDraftUi(){
+  const row = document.getElementById("ebCoverDraftRow");
+  const img = document.getElementById("ebCoverDraftImg");
+  if(ebCoverDraft && ebCoverDraft.url){
+    row.style.display = "flex";
+    img.src = ebCoverDraft.url;
+    img.style.objectPosition = `${ebCoverDraft.posX}% ${ebCoverDraft.posY}%`;
+    img.style.transform = `scale(${ebCoverDraft.zoom})`;
+  } else {
+    row.style.display = "none";
+    img.removeAttribute("src");
+  }
+}
+
+function openCoverAdjustModalForEdit(){
+  cropTargetKind = "edit";
+  cropTargetBookId = null;
+  if(!ebCoverDraft) return;
+  cropState = { zoom: ebCoverDraft.zoom || 1, posX: ebCoverDraft.posX ?? 50, posY: ebCoverDraft.posY ?? 50 };
+  const img = document.getElementById("cropImg");
+  document.getElementById("cropImgError").style.display = "none";
+  document.getElementById("cropUrlInput").value = ebCoverDraft.url;
+  resetCropOlSearch();
+  img.src = ebCoverDraft.url;
+  document.getElementById("cropZoom").value = Math.round(cropState.zoom * 100);
+  applyCropTransform();
+  openModal("coverCropModal");
+}
+
+function submitEditBook(){
+  const book = s.books.find(b => b.id === ebEditingId);
+  if(!book){ closeModal("editBookModal"); return; }
+  const title = document.getElementById("ebTitle").value.trim();
+  const author = document.getElementById("ebAuthor").value.trim();
+  const total = parseInt(document.getElementById("ebTotal").value) || 0;
+  const page = parseInt(document.getElementById("ebPage").value) || 0;
+  if(!title){ toast("Give your book a title"); return; }
+  book.title = title;
+  if(author) book.author = author; else delete book.author;
+  book.total = total;
+  book.lastPage = page;
+  if(ebCoverDraft && ebCoverDraft.url) book.cover = { ...ebCoverDraft };
+  else delete book.cover;
+  save();
+  closeModal("editBookModal");
+  ebEditingId = null;
+  toast("Book updated!");
+  renderAll();
+}
+
 /* ============================================================
    COVER CROP / ADJUST
    ============================================================ */
 let cropState = { zoom: 1, posX: 50, posY: 50 };
 let cropTargetBookId = null; // null = editing the new-book draft
-let cropTargetKind = "new"; // "new" | "active" | "finished"
+let cropTargetKind = "new"; // "new" | "active" | "finished" | "edit"
 let cropDrag = null;
 
 function resetCropOlSearch(){
@@ -2020,6 +2178,10 @@ function saveCoverAdjust(){
   } else if(cropTargetKind === "finished" && cropTargetBookId){
     const entry = (s.finishedLog || []).find(f => f.id === cropTargetBookId);
     if(entry){ entry.cover = cover; save(); renderBooksRead(); populateBrdModal(entry); }
+  } else if(cropTargetKind === "edit"){
+    ebCoverDraft = cover;
+    document.getElementById("ebCoverUrl").value = cover.url;
+    updateEbCoverDraftUi();
   } else {
     nbCoverDraft = cover;
     updateCoverDraftUi();
@@ -3497,6 +3659,7 @@ function renderBooks(){
     return `
       <div class="book-card hue-${i % 5}">
         <button class="book-remove" onclick="event.stopPropagation();openRemoveBookModal('${b.id}')" aria-label="Remove book">×</button>
+        <button class="book-edit" onclick="event.stopPropagation();openEditBookModal('${b.id}')" aria-label="Edit book" title="Edit book"><span style="transform:translateY(-1px)">✎</span></button>
         <div class="book-card-inner" onclick="openLogModal('${b.id}')">
           ${coverHtml}
           <div class="book-info">
