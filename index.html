@@ -1523,6 +1523,7 @@ function defaultReadathon(){
     started: false,       // has the readathon ever been started (for the one-time "started" log entry)
     startedAt: null,      // timestamp the current "on" segment began
     elapsedMs: 0,          // total accumulated reading time across all on/off toggles
+    lastCheckpointAt: null, // timestamp of the last moment pages were credited to a readathon session (segment start, or the last mid-segment log)
     sessions: []            // [{id,date,time,pages,durationMs,book}]
   };
 }
@@ -1567,6 +1568,7 @@ if(!s.goalHistory) s.goalHistory = {};
 if(!s.bookGoal) s.bookGoal = 24;
 if(!s.dailyQuote) s.dailyQuote = null;
 if(!s.readathon) s.readathon = defaultReadathon();
+if(s.readathon.lastCheckpointAt === undefined) s.readathon.lastCheckpointAt = s.readathon.active ? s.readathon.startedAt : null;
 
 function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
 
@@ -2771,6 +2773,25 @@ function logReadingSession(book, from, p){
 
   // streak counts today as active immediately too
   updateStreak(s.today.date, todayTotal());
+
+  // if a readathon is actively running and this log wasn't triggered by the
+  // "stop timer" flow (which records its own session via
+  // finalizeReadathonSession), credit these pages to the readathon too so
+  // logging from the regular Reading Tracker keeps the readathon log in
+  // sync without needing to stop the timer.
+  const r = s.readathon;
+  if(read > 0 && r && r.active && !readathonPending){
+    const checkpoint = r.lastCheckpointAt || r.startedAt || now.getTime();
+    r.sessions.push({
+      id: genId(),
+      date: todayStr(),
+      time: now.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}),
+      pages: read,
+      durationMs: Math.max(0, now.getTime() - checkpoint),
+      book: book.title
+    });
+    r.lastCheckpointAt = now.getTime();
+  }
 
   return read;
 }
@@ -4048,7 +4069,7 @@ function toggleReadathonTimer(){
       switchTab("journal");
       return;
     }
-    readathonPending = { pagesBefore: todayTotal(), durationMs: sessionMs };
+    readathonPending = { pagesBefore: todayTotal(), durationMs: Date.now() - (r.lastCheckpointAt || r.startedAt) };
     openLogModal();
   }
 }
@@ -4059,6 +4080,7 @@ function startReadathonTimerSegment(){
   const r = s.readathon;
   r.active = true;
   r.startedAt = Date.now();
+  r.lastCheckpointAt = r.startedAt;
   if(!r.started){
     r.started = true;
     logReadathonEvent("📖 Started 24-hour readathon");
@@ -4123,6 +4145,7 @@ function finalizeReadathonSession(){
     time: now.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}),
     pages, durationMs: pending.durationMs, book: title
   });
+  s.readathon.lastCheckpointAt = null;
   save();
   renderReadathon();
   if(pages > 0) toast(`+${pages} page${pages===1?"":"s"} added to your readathon`);
