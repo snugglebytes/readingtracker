@@ -3675,10 +3675,10 @@ function renderBooks(){
     const pct = total ? Math.min(Math.round((b.lastPage/total)*100),100) : 0;
     const cover = b.cover && b.cover.url;
     const coverHtml = cover ? `
-          <div class="book-cover-thumb" onclick="event.stopPropagation();openCoverAdjustModal('${b.id}')" title="Adjust cover">
+          <div class="book-cover-thumb" onclick="event.stopPropagation();openEditBookModal('${b.id}')" title="Edit book">
             <img src="${escapeHtml(b.cover.url)}" alt="" style="object-position:${b.cover.posX ?? 50}% ${b.cover.posY ?? 50}%;transform:scale(${b.cover.zoom || 1})" onerror="this.closest('.book-cover-thumb').classList.add('cover-broken')">
           </div>` : `
-          <button class="book-add-cover" onclick="event.stopPropagation();openAddCoverModal('${b.id}')">+ Add Cover</button>`;
+          <button class="book-add-cover" onclick="event.stopPropagation();openEditBookModal('${b.id}')">+ Add Cover</button>`;
     return `
       <div class="book-card hue-${i % 5}">
         <button class="book-remove" onclick="event.stopPropagation();openRemoveBookModal('${b.id}')" aria-label="Remove book"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
