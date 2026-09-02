@@ -149,8 +149,7 @@ h1{font-family:"Poppins",sans-serif;font-weight:normal;font-size:22px;letter-spa
 .menu-dot{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#f8f3fa;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;line-height:1;color:var(--text)}
 .menu-dot:active{transform:scale(.92)}
 .tile-title{font-size:13px;margin-top:4px;font-weight:600;overflow-wrap:break-word;word-break:break-word;min-width:0;cursor:pointer;transition:opacity .12s ease;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tile-title .name-bracket{opacity:.55;font-weight:500}
-.tile-title .name-bracket-angle{font-size:calc(1em - 2px);text-transform:uppercase}
+.tile-title .name-bracket{opacity:.55;font-weight:500;font-size:calc(1em - 3px);text-transform:uppercase}
 .tile-title:active{opacity:.6}
 .tile-sub{font-size:11px;color:#a493a0;padding:0 8px}
 .tile-location{overflow:hidden;white-space:nowrap;position:relative}
@@ -2609,10 +2608,7 @@ function tagName(id){ const t=DATA.tags.find(x=>x.id===id); return t?t.name:'—
 function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function formatNameHtml(s){
-  return escHtml(s).replace(/(\[[^\[\]]*\]|&lt;[^&]*?&gt;|\{[^{}]*\})/g, function(m){
-    const isAngle = m.slice(0,4)==='&lt;';
-    return `<span class="name-bracket${isAngle ? ' name-bracket-angle' : ''}">${m}</span>`;
-  });
+  return escHtml(s).replace(/(\[[^\[\]]*\]|&lt;[^&]*?&gt;|\{[^{}]*\})/g, '<span class="name-bracket">$1</span>');
 }
 
 /* ================= FAB ================= */
