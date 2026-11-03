@@ -1062,6 +1062,9 @@ html[data-babyblue="1"] .tab-btn-highlight.active .ic{color:var(--text)}
     <input id="logAuthorInput" placeholder="e.g. James Clear">
     <label for="logPageInput">Current Page</label>
     <input id="logPageInput" type="number" inputmode="numeric" placeholder="e.g. 91">
+    <label for="logDateInput">Date Read</label>
+    <input id="logDateInput" type="date">
+    <div class="sub" style="font-size:.78rem;margin:4px 0 0">Pages since your last page count toward this day.</div>
     <div class="row-buttons" style="margin-top:8px">
       <button class="ghost small" type="button" style="flex:1" onclick="markFinishedFromLog()">✓ Mark as Finished</button>
       <button class="ghost small dnf-btn" type="button" style="flex:1" onclick="dnfFromLog()">DNF</button>
@@ -2484,8 +2487,21 @@ function renderStarPicker(containerId, value, onPick, small){
 let pendingRatingBookId = null;
 let currentRatingValue = 0;
 
-function openRatingModal(bookId){
+let pendingRatingDate = null;
+
+// reads the Date Read field of the log modal; falls back to today, and never
+// allows a future date
+function getLogDate(){
+  const el = document.getElementById("logDateInput");
+  const v = el && el.value;
+  const t = todayStr();
+  if(!v || v > t) return t;
+  return v;
+}
+
+function openRatingModal(bookId, date){
   pendingRatingBookId = bookId;
+  pendingRatingDate = date || null;
   currentRatingValue = 0;
   const book = s.books.find(b => b.id === bookId);
   document.getElementById("ratingBookTitle").textContent = book ? (book.title || "This book") : "This book";
@@ -2499,19 +2515,23 @@ function openRatingModal(bookId){
 
 function confirmRating(){
   const bookId = pendingRatingBookId;
+  const date = pendingRatingDate;
   pendingRatingBookId = null;
+  pendingRatingDate = null;
   closeModal("ratingModal");
   if(!bookId) return;
-  finishBook(bookId, currentRatingValue || null);
+  finishBook(bookId, currentRatingValue || null, date);
   renderAll();
 }
 
 function skipRating(){
   const bookId = pendingRatingBookId;
+  const date = pendingRatingDate;
   pendingRatingBookId = null;
+  pendingRatingDate = null;
   closeModal("ratingModal");
   if(!bookId) return;
-  finishBook(bookId, null);
+  finishBook(bookId, null, date);
   renderAll();
 }
 
@@ -2523,13 +2543,14 @@ function openRemoveBookModal(id){
   openModal("removeBookModal");
 }
 
-function finishBook(bookId, rating){
+function finishBook(bookId, rating, date){
   const book = s.books.find(b=>b.id===bookId);
   if(!book) return false;
+  const finishDate = date || todayStr();
   const wasBookGoalMet = booksReadThisYear() >= s.bookGoal;
   s.stats.booksFinished += 1;
   s.finishedLog = s.finishedLog || [];
-  const entry = { id: genId(), title: book.title, date: todayStr() };
+  const entry = { id: genId(), title: book.title, date: finishDate };
   if(book.author) entry.author = book.author;
   if(book.total) entry.total = book.total;
   if(book.lastPage) entry.lastPage = book.lastPage;
@@ -2540,7 +2561,7 @@ function finishBook(bookId, rating){
   // link this credit to the today's-log entry that finished the book, so
   // deleting that entry via the journal bulk editor removes both the page
   // count and the book count together
-  const todayEntries = s.today.log || [];
+  const todayEntries = (finishDate === s.today.date ? s.today.log : s.journal[finishDate]) || [];
   for(let i = todayEntries.length - 1; i >= 0; i--){
     if(todayEntries[i].bookId === bookId && !todayEntries[i].finishedEntryId){
       todayEntries[i].finished = true;
@@ -2612,6 +2633,7 @@ function confirmFinishYes(){
 
       const p = parseInt(document.getElementById("logPageInput").value);
       const from = book.lastPage || 1;
+      const logDate = ctx.date || todayStr();
       // whatever page was typed, finishing a book means it's been read to
       // the end — credit through book.total (if known) so the session
       // shows up in the log and stats even if the page field was left
@@ -2619,14 +2641,14 @@ function confirmFinishYes(){
       let to = (!isNaN(p) && p > from) ? p : from;
       if(book.total && to < book.total) to = book.total;
       if(to > from){
-        logReadingSession(book, from, to);
+        logReadingSession(book, from, to, logDate);
       }
       save();
     }
     closeModal("logModal");
   }
 
-  openRatingModal(ctx.bookId);
+  openRatingModal(ctx.bookId, ctx.date);
 }
 
 function confirmFinishNo(){
@@ -2652,14 +2674,17 @@ function dnfFromLog(){
   const book = s.books.find(b=>b.id===activeLogBookId);
   if(!book){ toast("Pick a book first"); closeModal("logModal"); return; }
   pendingRemoveId = book.id;
+  pendingDnfDate = getLogDate();
   closeModal("logModal");
   dnfBookConfirm();
 }
 
+let pendingDnfDate = null;
+
 function markFinishedFromLog(){
   const book = s.books.find(b=>b.id===activeLogBookId);
   if(!book){ toast("Pick a book first"); closeModal("logModal"); return; }
-  openFinishConfirmModal(book, { source: "markButton" });
+  openFinishConfirmModal(book, { source: "markButton", date: getLogDate() });
 }
 
 function dnfBookConfirm(){
@@ -2669,7 +2694,8 @@ function dnfBookConfirm(){
   // unlike Remove, DNF keeps whatever pages were already logged today —
   // only the "finished" credit is withheld, so reading progress still counts
   s.dnfLog = s.dnfLog || [];
-  s.dnfLog.push({ id: genId(), title: book ? book.title : "", date: todayStr() });
+  s.dnfLog.push({ id: genId(), title: book ? book.title : "", date: pendingDnfDate || todayStr() });
+  pendingDnfDate = null;
 
   s.books = s.books.filter(b=>b.id!==bookId);
   s.undo = null;
@@ -2733,6 +2759,9 @@ function openLogModal(bookId){
   document.getElementById("logTitleInput").value = book.title || "";
   document.getElementById("logAuthorInput").value = book.author || "";
   document.getElementById("logPageInput").value = book.lastPage || "";
+  const dateEl = document.getElementById("logDateInput");
+  dateEl.max = todayStr();
+  dateEl.value = todayStr();
   openModal("logModal");
   setTimeout(()=>{
     const el = document.getElementById("logPageInput");
@@ -2759,28 +2788,76 @@ function logBookStarted(book){
   });
 }
 
-function logReadingSession(book, from, p){
+/* Rebuilds the streak from the per-day page totals. Used when pages are
+   applied to (or removed from) a past date, since the incremental streak
+   logic only knows how to move forward from today. */
+function recomputeStreak(){
+  const met = new Set();
+  Object.keys(s.journal).forEach(d => {
+    const pages = (s.journal[d] || []).reduce((a,x)=>a+x.read,0);
+    if(pages > 0 && pages >= (s.goalHistory[d] || s.goal)) met.add(d);
+  });
+  if(todayTotal() >= s.goal) met.add(s.today.date);
+  const days = [...met].sort();
+  if(!days.length){
+    s.streak.current = 0;
+    s.streak.lastActiveDate = null;
+    return;
+  }
+  let run = 0, best = 0, prev = null;
+  days.forEach(d => {
+    run = (prev && dayDiff(prev, d) === 1) ? run + 1 : 1;
+    if(run > best) best = run;
+    prev = d;
+  });
+  const last = days[days.length - 1];
+  s.streak.lastActiveDate = last;
+  s.streak.current = dayDiff(last, s.today.date) <= 1 ? run : 0;
+  if(best > s.streak.longest) s.streak.longest = best;
+  if(s.streak.current > s.streak.longest) s.streak.longest = s.streak.current;
+}
+
+// `date` (YYYY-MM-DD) is the day the pages were actually read; defaults to today.
+function logReadingSession(book, from, p, date){
   const read = Math.max(0, p - from);
   const now = new Date();
+  const targetDate = date || s.today.date;
+  const isToday = targetDate === s.today.date;
 
   book.lastPage = p;
-  s.today.log = s.today.log || [];
-  s.today.log.push({
+  const entry = {
     time: now.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}),
     ts: now.getTime(),
     from, to:p, read, book: book.title, bookId: book.id
-  });
+  };
 
-  // streak counts today as active immediately too
-  updateStreak(s.today.date, todayTotal());
+  if(isToday){
+    s.today.log = s.today.log || [];
+    s.today.log.push(entry);
+    // streak counts today as active immediately too
+    updateStreak(s.today.date, todayTotal());
+  } else {
+    // back-dated: file it under that day's journal, ordered at the current
+    // time of day on that date, and keep the goal that applied to that day
+    const d = new Date(targetDate + "T00:00:00");
+    d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    entry.ts = d.getTime();
+    s.journal[targetDate] = s.journal[targetDate] || [];
+    s.journal[targetDate].push(entry);
+    if(!s.goalHistory[targetDate]) s.goalHistory[targetDate] = s.goal;
+    recomputeStreak();
+  }
+
+  if(readathonPending) readathonPending.pages = (readathonPending.pages || 0) + read;
 
   // if a readathon is actively running and this log wasn't triggered by the
   // "stop timer" flow (which records its own session via
   // finalizeReadathonSession), credit these pages to the readathon too so
   // logging from the regular Reading Tracker keeps the readathon log in
-  // sync without needing to stop the timer.
+  // sync without needing to stop the timer. Back-dated pages weren't read
+  // during the timer, so they aren't credited.
   const r = s.readathon;
-  if(read > 0 && r && r.active && !readathonPending){
+  if(isToday && read > 0 && r && r.active && !readathonPending){
     const checkpoint = r.lastCheckpointAt || r.startedAt || now.getTime();
     r.sessions.push({
       id: genId(),
@@ -2810,7 +2887,9 @@ function submitLog(){
     books: JSON.parse(JSON.stringify(s.books)),
     today: JSON.parse(JSON.stringify(s.today)),
     streak: { ...s.streak },
-    stats: { ...s.stats }
+    stats: { ...s.stats },
+    journal: JSON.parse(JSON.stringify(s.journal)),
+    goalHistory: { ...s.goalHistory }
   };
 
   if(editedTitle) book.title = editedTitle;
@@ -2829,8 +2908,10 @@ function submitLog(){
     return;
   }
 
+  const logDate = getLogDate();
+  const isToday = logDate === s.today.date;
   const wasComplete = todayTotal() >= s.goal;
-  const read = logReadingSession(book, from, p);
+  const read = logReadingSession(book, from, p, logDate);
   save();
   closeModal("logModal");
   renderAll();
@@ -2840,7 +2921,12 @@ function submitLog(){
   // shouldn't silently pull a book out of Currently Reading.
   if(book.total > 0 && p >= book.total && from < book.total){
     const nowComplete = todayTotal() >= s.goal;
-    openFinishConfirmModal(book, { source: "autoPrompt", wasComplete, nowComplete, read });
+    openFinishConfirmModal(book, { source: "autoPrompt", wasComplete, nowComplete, read, date: logDate });
+    return;
+  }
+
+  if(!isToday){
+    toast(`+${read} page${read===1?"":"s"} logged for ${formatDisplayDate(logDate)}`);
     return;
   }
 
@@ -2858,6 +2944,8 @@ function undo(){
   s.today = s.undo.today;
   s.streak = s.undo.streak;
   s.stats = s.undo.stats;
+  if(s.undo.journal) s.journal = s.undo.journal;
+  if(s.undo.goalHistory) s.goalHistory = s.undo.goalHistory;
   s.undo = null;
   save();
   toast("Last log undone");
@@ -3852,6 +3940,9 @@ function deleteJournalLog(dateKey, idx){
     if(tot < s.goal && s.streak.lastActiveDate === s.today.date && s.streak.current > 0){
       s.streak.current = Math.max(0, s.streak.current - 1);
     }
+  } else {
+    // removing pages from a past day can break (or shorten) a streak
+    recomputeStreak();
   }
 
   renderJournal();
@@ -4134,7 +4225,7 @@ function finalizeReadathonSession(){
   const pending = readathonPending;
   readathonPending = null;
   if(!pending) return;
-  const pages = Math.max(0, todayTotal() - pending.pagesBefore);
+  const pages = pending.pages || 0;
   const book = s.books.find(b => b.id === activeLogBookId);
   const finished = (s.finishedLog || []).slice(-1)[0];
   const title = book ? book.title : (finished ? finished.title : "Reading session");
